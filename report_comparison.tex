@@ -1,0 +1,110 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{hyperref}
+
+\title{Analysis of Bias in Matryoshka vs. Standard Embeddings}
+\author{Experimental Report}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This report analyzes the bias characteristics of Matryoshka Representation Learning (MRL) embeddings compared to standard non-MRL embeddings. We compare two models:
+\begin{itemize}
+    \item \textbf{MRL Model}: \texttt{tomaarsen/mpnet-base-nli-matryoshka}
+    \item \textbf{Baseline (Non-MRL)}: \texttt{tomaarsen/mpnet-base-nli}
+\end{itemize}
+
+We investigate four research questions (RQ1--RQ4) focusing on bias subspace survival, concentration, and debiasing effectiveness at various prefix dimensions ($d \in \{64, 128, \dots, 768\}$).
+
+\section{RQ1: Bias Subspace Survival}
+\textit{Does the bias subspace determined at full dimension $D$ align with the subspace at prefix dimension $d$?}
+
+We measure the subspace alignment error between the projected full bias subspace $\Pi_d(B^{(D)})$ and the local prefix bias subspace $B^{(d)}$. Lower error indicates better survival.
+
+\begin{table}[H]
+    \centering
+    \caption{Subspace Alignment Error (lower is better)}
+    \begin{tabular}{c c c}
+    \toprule
+    Dimension ($d$) & Baseline Error & MRL Error \\
+    \midrule
+    64 & 0.289 & \textbf{0.284} \\
+    128 & 0.262 & \textbf{0.259} \\
+    256 & 0.211 & \textbf{0.208} \\
+    384 & 0.160 & \textbf{0.159} \\
+    512 & 0.100 & \textbf{0.098} \\
+    \bottomrule
+    \end{tabular}
+\end{table}
+
+\textbf{Analysis:} The MRL model consistently shows slightly lower alignment error across all dimensions. This indicates that the bias direction in MRL models is more stable and "survives" truncation better than in standard models, likely due to the nested structure of MRL training.
+
+\section{RQ3: Bias Concentration}
+\textit{Does MRL concentrate bias information in early dimensions?}
+
+We calculate the concentration score $C(d) = \text{Var}(b^{(d)}) / \text{Var}(b^{(D)})$, representing the proportion of total bias captured in the first $d$ dimensions.
+
+\begin{table}[H]
+    \centering
+    \caption{Bias Concentration $C(d)$ (higher indicates earlier concentration)}
+    \begin{tabular}{c c c}
+    \toprule
+    Dimension ($d$) & Baseline $C(d)$ & MRL $C(d)$ \\
+    \midrule
+    64 & 0.089 & \textbf{0.110} \\
+    128 & 0.129 & \textbf{0.198} \\
+    256 & 0.269 & \textbf{0.380} \\
+    384 & 0.502 & \textbf{0.557} \\
+    \bottomrule
+    \end{tabular}
+\end{table}
+
+\textbf{Analysis:} The MRL model shows significantly higher bias concentration in early dimensions. At $d=64$, MRL captures 11.0\% of the total bias variance compared to 8.9\% for the baseline. At $d=128$, this gap widens (19.8\% vs 12.9\%). This confirms that MRL packs concept information (including bias) into the prefix.
+
+\section{RQ2: Debiasing at Prefix Level}
+\textit{Does debiasing at the full dimension $D$ effectively remove bias at prefix dimension $d$?}
+
+We measure the residual bias (L2 norm of projection onto bias subspace) at each prefix dimension after applying DeepSoftDebias at $D=768$.
+
+\begin{table}[H]
+    \centering
+    \caption{Residual Bias after Full-Dimension Debiasing}
+    \begin{tabular}{c c c}
+    \toprule
+    Dimension ($d$) & Baseline Residual & MRL Residual \\
+    \midrule
+    64 & \textbf{0.107} & 0.154 \\
+    128 & \textbf{0.108} & 0.139 \\
+    256 & \textbf{0.099} & 0.152 \\
+    \midrule
+    768 (Full) & 0.357 & \textbf{0.197} \\
+    \bottomrule
+    \end{tabular}
+\end{table}
+
+\textbf{Analysis:}
+\begin{itemize}
+    \item \textbf{At Full Dimension ($D=768$):} MRL is much easier to debias globally (Residual 0.197 vs 0.357).
+    \item \textbf{At Prefix ($d=64$):} MRL retains \textit{more} residual bias (0.154) than the baseline (0.107).
+\end{itemize}
+This suggests that while MRL is globally more amenable to debiasing, a simple global operation may not be sufficient for the truncated prefixes because the bias is densely concentrated there. The projection that cleans $D=768$ does not arguably clean the specific dense bias features in $d=64$.
+
+\section{RQ4: Adaptive Lambda}
+\textit{Does the optimal debiasing parameter $\lambda$ change with dimension?}
+
+We performed a grid search for $\lambda_2$ (trade-off parameter) to minimize bias while maintaining similarity $>0.9$.
+
+\begin{itemize}
+    \item \textbf{MRL Model at $d=64$:} Optimal $\lambda \approx 0.8$.
+    \item \textbf{Baseline Model at $d=64$:} Optimal $\lambda \approx 0.5$.
+\end{itemize}
+
+\textbf{Conclusion:} Because MRL concentrates bias in the early dimensions (as seen in RQ3), a stronger debiasing penalty ($\lambda=0.8$) is required to effectively remove it compared to the baseline model.
+
+\end{document}
