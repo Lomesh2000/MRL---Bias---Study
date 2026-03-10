@@ -7,6 +7,7 @@ Models:
 """
 
 import sys
+import gc
 import os
 import numpy as np
 import pandas as pd
@@ -14,6 +15,8 @@ import matplotlib.pyplot as plt
 from sentence_transformers import SentenceTransformer
 import matplotlib
 matplotlib.use("Agg")
+import torch
+torch.set_num_threads(2)
 
 # Add src to path
 sys.path.append(os.getcwd())
@@ -23,6 +26,7 @@ from src.experiments.rq3_bias_concentration import run_rq3
 from src.experiments.rq2_debiasing_at_prefix import residual_bias_at_prefix
 from src.experiments.rq4_adaptive_lambda import run_rq4, soft_debias_with_lambda
 from src.bias.bias_subspace import BiasSubspace
+from src.bias.stereoset import evaluate_stereoset
 
 # Configuration
 PREFIX_DIMS = [64, 128, 256, 384, 512, 768]
@@ -59,9 +63,11 @@ VOCAB_LIST = list(set(VOCAB_LIST))
 
 def get_embeddings(model_name, vocab):
     print(f"Loading {model_name}...", flush=True)
-    model = SentenceTransformer(model_name, trust_remote_code=True)
+    model = SentenceTransformer(model_name, trust_remote_code=True, device='cpu')
     print("Generating embeddings...", flush=True)
     embeddings_matrix = model.encode(vocab, convert_to_numpy=True)
+    del model
+    gc.collect() 
     return {w: v for w, v in zip(vocab, embeddings_matrix)}
 
 print("--- Step 1: Load Models & Embeddings ---")
@@ -157,5 +163,79 @@ df_rq4_no_mrl, _ = run_rq4(
     lambda_grid=[0.0, 0.5, 0.8, 1.0, 1.2, 1.5, 2.0],
     save_dir=os.path.join(SAVE_DIR, "non_mrl")
 )
+
+
+# -----------------------------------------------------------------------
+# Step 6: StereoSet Evaluation (SS, LMS, ICAT)
+# -----------------------------------------------------------------------
+print("\n--- Running Step 6: StereoSet Evaluation ---")
+
+# Load models again? It's better to pass the models if they weren't loaded
+# But 'get_embeddings' didn't return the model object, only embeddings.
+# We need the model object for sentence encoding of new sentences.
+
+def run_stereoset_for_model(model_name, label):
+    print(f"Loading {model_name} for StereoSet...", flush=True)
+    model = SentenceTransformer(model_name, trust_remote_code=True)
+    
+    results = []
+    # Test at different prefix dimensions
+    # MRL model supports truncation. Non-MRL technically doesn't but we can truncate manually.
+    dims_to_test = PREFIX_DIMS  # [64, 128, ...]
+    
+    for d in dims_to_test:
+        print(f"  Evaluating {label} at d={d}...", flush=True)
+        scores = evaluate_stereoset(
+            model, 
+            dataset_path="data/stereoset_dev.json",
+            prefix_dim=d
+        )
+        scores["dim_d"] = d
+        scores["model"] = label
+        results.append(scores)
+        print(f"    d={d} | SS={scores['ss']:.2f} | LMS={scores['lms']:.2f} | ICAT={scores['icat']:.2f}")
+    
+    del model
+    gc.collect()
+    return results
+
+# Run for MRL
+res_mrl_ss = run_stereoset_for_model(MODEL_MRL, "MRL")
+
+# Run for Non-MRL
+res_no_mrl_ss = run_stereoset_for_model(MODEL_NO_MRL, "Non-MRL")
+
+# Combine and save
+df_ss = pd.DataFrame(res_mrl_ss + res_no_mrl_ss)
+csv_ss_path = os.path.join(SAVE_DIR, "bias_scores", "stereoset_results.csv")
+df_ss.to_csv(csv_ss_path, index=False)
+print(f"Saved StereoSet results to {csv_ss_path}")
+
+# Plot StereoSet
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+metrics = ["ss", "lms", "icat"]
+titles = ["Stereotype Score (SS) - Ideal 50", "Language Modeling (LMS) - Ideal 100", "ICAT Score - Ideal 100"]
+
+for ax, met, tit in zip(axes, metrics, titles):
+    for label in ["MRL", "Non-MRL"]:
+        sub = df_ss[df_ss["model"] == label]
+        ax.plot(sub["dim_d"], sub[met], marker="o", label=label)
+    
+    ax.set_title(tit)
+    ax.set_xlabel("Dimension d")
+    ax.set_ylabel(met.upper())
+    
+    # Add ideal lines
+    if "ss" in met:
+        ax.axhline(50, color='r', linestyle='--', alpha=0.5, label="Ideal (50)")
+    elif "lms" in met or "irat" in met:
+        ax.axhline(100, color='r', linestyle='--', alpha=0.5, label="Ideal (100)")
+        
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig(os.path.join(SAVE_DIR, "figures", "stereoset_comparison.png"), dpi=150)
+plt.close()
 
 print(f"\nAll experiments complete. Results in {SAVE_DIR}")
