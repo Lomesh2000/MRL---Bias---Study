@@ -83,6 +83,13 @@ def compute_bias_concentration(
         # Truncate embeddings to first d dims
         embs_d = {w: embeddings[w][:d] for w in words}
 
+        # refit the bias subspace on the truncated embeddings if requested (for RQ1)
+        # if fit_per_dim:
+        #     bias_subspace_d = bias_subspace_full.fit(embs_d)
+        #     P_B = bias_subspace_d.P_B   
+        # else:
+        #     P_B = bias_subspace_full.P_B[:d, :d]  # Use full bias subspace but truncated to d dims
+
         # Project with full P_B then truncate result to d dims
         P_B_full = bias_subspace_full.P_B   # (D, D)
         scores_d = []
