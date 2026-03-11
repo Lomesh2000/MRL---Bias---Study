@@ -107,4 +107,16 @@ We performed a grid search for $\lambda_2$ (trade-off parameter) to minimize bia
 
 \textbf{Conclusion:} Because MRL concentrates bias in the early dimensions (as seen in RQ3), a stronger debiasing penalty ($\lambda=0.8$) is required to effectively remove it compared to the baseline model.
 
+\section{Discussion: Intrinsic vs. Downstream Bias Correlation}
+\textit{How does intrinsic embedding bias correlate with downstream task bias under hierarchical compression?}
+
+We compared the Intrinsic Bias Concentration $C(d)$ (from RQ3) with the Downstream Stereotype Score (SS) on the StereoSet dataset.
+
+\begin{itemize}
+    \item \textbf{General Trend:} There is a positive correlation. As dimension $d$ increases, both the intrinsic bias variance and the downstream stereotype usage increase or saturate.
+    \item \textbf{Model Comparison:} Interestingly, while MRL shows higher intrinsic bias concentration at $d=128$ ($C(d) \approx 0.24$) compared to the Baseline ($C(d) \approx 0.16$), it exhibits lower downstream stereotyping (SS=66.7 vs Baseline SS=100.0).
+\end{itemize}
+
+This suggests a dissociation: while MRL "packs" more bias variance geometrically into early dimensions, this concentrated bias does not immediately translate into worse downstream behavior. The MRL model appears more robust, delaying the saturation of stereotype scores until $d=256$, whereas the Baseline saturates at $d=128$.
+
 \end{document}
