@@ -57,15 +57,16 @@ We calculate the concentration score $C(d) = \text{Var}(b^{(d)}) / \text{Var}(b^
     \toprule
     Dimension ($d$) & Baseline $C(d)$ & MRL $C(d)$ \\
     \midrule
-    64 & 0.089 & \textbf{0.110} \\
-    128 & 0.129 & \textbf{0.198} \\
-    256 & 0.269 & \textbf{0.380} \\
-    384 & 0.502 & \textbf{0.557} \\
+    64 & 0.085 & \textbf{0.158} \\
+    128 & 0.165 & \textbf{0.241} \\
+    256 & 0.287 & \textbf{0.376} \\
+    384 & 0.497 & \textbf{0.558} \\
+    512 & 0.695 & \textbf{0.719} \\
     \bottomrule
     \end{tabular}
 \end{table}
 
-\textbf{Analysis:} The MRL model shows significantly higher bias concentration in early dimensions. At $d=64$, MRL captures 11.0\% of the total bias variance compared to 8.9\% for the baseline. At $d=128$, this gap widens (19.8\% vs 12.9\%). This confirms that MRL packs concept information (including bias) into the prefix.
+\textbf{Analysis:} The MRL model shows significantly higher bias concentration in early dimensions. At $d=64$, MRL captures 15.8\% of the total bias variance compared to only 8.5\% for the baseline. At $d=128$, this gap widens (24.1\% vs 16.5\%). This confirms that MRL packs concept information (including bias) into the prefix.
 
 \section{RQ2: Debiasing at Prefix Level}
 \textit{Does debiasing at the full dimension $D$ effectively remove bias at prefix dimension $d$?}
@@ -79,21 +80,22 @@ We measure the residual bias (L2 norm of projection onto bias subspace) at each 
     \toprule
     Dimension ($d$) & Baseline Residual & MRL Residual \\
     \midrule
-    64 & \textbf{0.107} & 0.154 \\
-    128 & \textbf{0.108} & 0.139 \\
-    256 & \textbf{0.099} & 0.152 \\
+    64 & \textbf{0.106} & 0.150 \\
+    128 & 0.139 & \textbf{0.115} \\
+    256 & \textbf{0.110} & 0.144 \\
+    384 & 0.171 & \textbf{0.169} \\
     \midrule
-    768 (Full) & 0.357 & \textbf{0.197} \\
+    768 (Full) & 0.252 & \textbf{0.223} \\
     \bottomrule
     \end{tabular}
 \end{table}
 
 \textbf{Analysis:}
 \begin{itemize}
-    \item \textbf{At Full Dimension ($D=768$):} MRL is much easier to debias globally (Residual 0.197 vs 0.357).
-    \item \textbf{At Prefix ($d=64$):} MRL retains \textit{more} residual bias (0.154) than the baseline (0.107).
+    \item \textbf{At Full Dimension ($D=768$):} MRL is more amenable to global debiasing (Residual 0.223 vs 0.252).
+    \item \textbf{At Prefix ($d=64$):} MRL retains \textit{more} residual bias (0.150) than the baseline (0.106), likely due to the high concentration of bias features in the first 64 dimensions that global debiasing fails to remove.
+    \item \textbf{At Prefix ($d=128$):} MRL actually retains \textit{less} residual bias (0.115 vs 0.139), showing that by dimension 128, the global debiasing operation effectively cleans the subspace.
 \end{itemize}
-This suggests that while MRL is globally more amenable to debiasing, a simple global operation may not be sufficient for the truncated prefixes because the bias is densely concentrated there. The projection that cleans $D=768$ does not arguably clean the specific dense bias features in $d=64$.
 
 \section{RQ4: Adaptive Lambda}
 \textit{Does the optimal debiasing parameter $\lambda$ change with dimension?}
@@ -113,10 +115,14 @@ We performed a grid search for $\lambda_2$ (trade-off parameter) to minimize bia
 We compared the Intrinsic Bias Concentration $C(d)$ (from RQ3) with the Downstream Stereotype Score (SS) on the StereoSet dataset.
 
 \begin{itemize}
-    \item \textbf{General Trend:} There is a positive correlation. As dimension $d$ increases, both the intrinsic bias variance and the downstream stereotype usage increase or saturate.
-    \item \textbf{Model Comparison:} Interestingly, while MRL shows higher intrinsic bias concentration at $d=128$ ($C(d) \approx 0.24$) compared to the Baseline ($C(d) \approx 0.16$), it exhibits lower downstream stereotyping (SS=66.7 vs Baseline SS=100.0).
+    \item \textbf{General Trend:} Positive correlation. Higher bias concentration $C(d)$ tends to result in higher downstream stereotyping scores.
+    \item \textbf{Model Comparison at $d=128$:}
+    \begin{itemize}
+        \item \textbf{MRL:} High Concentration ($C \approx 0.24$) $\rightarrow$ \textbf{Higher SS (54.5)}
+        \item \textbf{Baseline:} Lower Concentration ($C \approx 0.16$) $\rightarrow$ \textbf{Lower SS (53.7)}
+    \end{itemize}
 \end{itemize}
 
-This suggests a dissociation: while MRL "packs" more bias variance geometrically into early dimensions, this concentrated bias does not immediately translate into worse downstream behavior. The MRL model appears more robust, delaying the saturation of stereotype scores until $d=256$, whereas the Baseline saturates at $d=128$.
+The results indicate that the "packed" bias in MRL \textit{does} translate to slightly higher stereotyping scores in downstream tasks compared to the baseline. The high density of bias information in the prefix ($d=64, 128$) makes the MRL model more prone to exhibiting stereotypes when truncated, compared to the baseline which has less information (and less bias) in those early dimensions.
 
 \end{document}
