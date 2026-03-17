@@ -28,7 +28,7 @@ with open("config/config.yaml") as f:
 
 PREFIX_DIMS = cfg["embeddings"]["mrl_dims"]
 K = cfg["bias_subspace"]["k"]
-SAVE_DIR = cfg["results"]["save_dir"]
+SAVE_DIR = cfg["results"]["DSD_dir"]
 os.makedirs(os.path.join(SAVE_DIR, "bias_scores"), exist_ok=True)
 os.makedirs(os.path.join(SAVE_DIR, "figures"), exist_ok=True)
 
@@ -118,13 +118,25 @@ df_rq3 = run_rq3(
 )
 
 # -----------------------------------------------------------------------
-# Step 6: Apply Rakshit debiasing
+# Step 6: Apply Deep Soft Debiasing (DSD)
 # -----------------------------------------------------------------------
-print("\nStep 6: Applying Rakshit debiasing (parity-enforcing)")
-from src.bias.bias_subspace import BiasSubspace
-bs = BiasSubspace(k=K)
-bs.fit(embeddings_baseline, GENDER_PAIRS)
-embeddings_debiased = {w: bs.debias(v) for w, v in embeddings_baseline.items()}
+print("\nStep 6: Training Deep Soft Debias (DSD) neural network")
+from src.bias.deep_soft_debias import DeepSoftDebias
+
+# 1. Initialize the DSD model
+# lambda_2 controls how strongly it penalizes bias (1.0 is a good starting point)
+# epochs controls how long the autoencoder trains
+dsd = DeepSoftDebias(lambda_2=1.0, k=K, hidden_dim=512, lr=1e-3, epochs=100)
+
+# 2. Train the network
+# This fits the bias subspace inside, and then runs the PyTorch training loop
+# to minimize both MSE loss (semantic preservation) and Bias loss.
+dsd.fit(embeddings_baseline, GENDER_PAIRS)
+
+# 3. Apply the trained network to get the debiased embeddings
+embeddings_debiased = dsd.transform(embeddings_baseline)
+
+print("DSD Training complete. Embeddings transformed.")
 
 # -----------------------------------------------------------------------
 # Step 7: RQ2
