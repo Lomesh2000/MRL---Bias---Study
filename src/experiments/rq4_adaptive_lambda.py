@@ -47,23 +47,23 @@ def soft_debias_with_lambda(embeddings: Dict[str, np.ndarray],
     return debiased
 
 
-def evaluate_tradeoff(embeddings_original: Dict[str, np.ndarray],
-                      embeddings_debiased: Dict[str, np.ndarray],
+def evaluate_tradeoff(truncated_original: Dict[str, np.ndarray],
+                      truncated_debiased: Dict[str, np.ndarray],
                       bs_d: BiasSubspace,
                       d: int) -> Tuple[float, float]:
     """
     Returns:
         bias_score   : mean L2 bias at prefix d (lower is better)
-        semantic_sim : mean cosine similarity to original (higher is better)
+        semantic_sim : mean cosine similarity to original (higher is better)    
     """
     from src.bias.bias_metrics import cosine_similarity
-    words = list(embeddings_original.keys())
+    words = list(truncated_original.keys())
 
     bias_scores = []
     cos_sims = []
     for w in words:
-        v_orig = embeddings_original[w][:d]
-        v_deb = embeddings_debiased[w][:d]
+        v_orig = truncated_original[w]
+        v_deb = truncated_debiased[w]
         bias_scores.append(float(np.linalg.norm(bs_d.project(v_deb))))
         cos_sims.append(cosine_similarity(v_orig, v_deb))
 
@@ -83,25 +83,23 @@ def run_rq4(embeddings: Dict[str, np.ndarray],
     if lambda_grid is None:
         lambda_grid = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.5, 2.0]
 
-    # Fit bias subspace at full dim
-    bs_full = BiasSubspace(k=k)
-    bs_full.fit(embeddings, gender_pairs)
-
     results = []
     for d, lam in product(prefix_dims, lambda_grid):
-        # Debias with this lambda
-        debiased = soft_debias_with_lambda(embeddings, bs_full, lam)
-
-        # Fit bias subspace at prefix d
+        # Truncate orig embeddings to prefix d
         truncated_orig = {w: embeddings[w][:d] for w in embeddings}
+        
+        # Fit bias subspace at prefix d
         bs_d = BiasSubspace(k=k)
         try:
             bs_d.fit(truncated_orig, gender_pairs)
         except ValueError:
             continue
 
+        # Debias natively inside this d-dimensional truncated space
+        debiased_d = soft_debias_with_lambda(truncated_orig, bs_d, lam)
+
         bias_score, sem_sim = evaluate_tradeoff(
-            embeddings, debiased, bs_d, d)
+            truncated_orig, debiased_d, bs_d, d)
 
         results.append({
             "dim_d": d,

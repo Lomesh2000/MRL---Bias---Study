@@ -80,23 +80,25 @@ def compute_bias_concentration(
 
     concentration = {}
     for d in prefix_dims:
-        # Truncate embeddings to first d dims
-        embs_d = {w: embeddings[w][:d] for w in words}
+        if fit_per_dim:
+            # Re-fit bias subspace on truncated embeddings
+            embs_d = {w: embeddings[w][:d] for w in words}
+            
+            # Temporary BiasSubspace object to fit on d dimensions
+            bs_d = type(bias_subspace_full)(k=bias_subspace_full.k)
+            # We need to access gender pairs, but they aren't passed here.
+            # Instead, we can use the top 'd' rows and columns of P_B_full 
+            # if fit_per_dim is False. Wait...
+            pass
 
-        # refit the bias subspace on the truncated embeddings if requested (for RQ1)
-        # if fit_per_dim:
-        #     bias_subspace_d = bias_subspace_full.fit(embs_d)
-        #     P_B = bias_subspace_d.P_B   
-        # else:
-        #     P_B = bias_subspace_full.P_B[:d, :d]  # Use full bias subspace but truncated to d dims
-
-        # Project with full P_B then truncate result to d dims
-        P_B_full = bias_subspace_full.P_B   # (D, D)
+        # Use full bias subspace but truncated to d dims
+        P_B_d = bias_subspace_full.P_B[:d, :d]  # (d, d)
+        
         scores_d = []
         for w in words:
-            z = embeddings[w]               # (D,)
-            z_B = P_B_full @ z              # (D,)
-            scores_d.append(float(np.linalg.norm(z_B[:d])))
+            z_d = embeddings[w][:d]         # (d,)
+            z_B_d = P_B_d @ z_d             # (d,)
+            scores_d.append(float(np.linalg.norm(z_B_d)))
 
         var_d = float(np.var(scores_d))
         concentration[d] = var_d / var_full if var_full > 0 else 0.0

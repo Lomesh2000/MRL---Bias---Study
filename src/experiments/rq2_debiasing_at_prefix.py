@@ -22,35 +22,38 @@ import os
 from src.bias.bias_subspace import BiasSubspace
 
 
-def residual_bias_at_prefix(embeddings: Dict[str, np.ndarray],
-                             bs_full: BiasSubspace,
+def residual_bias_at_prefix(embeddings_raw: Dict[str, np.ndarray],
+                             embeddings_eval: Dict[str, np.ndarray],
                              prefix_dims: List[int],
-                             gender_pairs: List[Tuple[str, str]]) -> Dict[int, float]:
+                             gender_pairs: List[Tuple[str, str]],
+                             k: int) -> Dict[int, float]:
     """
     For each prefix dim d, compute:
-        L2^(d) = sum_w || P_{B^(d)} * f^(d)(w) ||^2
+        L2^(d) = sum_w || P_{B_{raw}^(d)} * f_{eval}^(d)(w) ||^2
 
-    This tells us how much bias remains inside the prefix after
-    full-dim debiasing (Rakshit's method).
+    This tells us how much bias remains inside the prefix evaluated against
+    the original unmodified bias subspace.
     """
     residuals = {}
     for d in prefix_dims:
-        # Fit bias subspace at prefix level d
-        bs_d = BiasSubspace(k=bs_full.k)
-        truncated = {w: embeddings[w][:d] for w in embeddings}
+        # Fit bias subspace at prefix level d using RAW embeddings
+        bs_d = BiasSubspace(k=k)
+        truncated_raw = {w: embeddings_raw[w][:d] for w in embeddings_raw}
+        truncated_eval = {w: embeddings_eval[w][:d] for w in embeddings_eval}
+        
         try:
-            bs_d.fit(truncated, gender_pairs)
+            bs_d.fit(truncated_raw, gender_pairs)
         except ValueError:
             residuals[d] = float("nan")
             continue
 
-        # L2^(d) = sum_w || P_{B^(d)} f^(d)(w) ||^2
+        # L2^(d) = sum_w || P_{B_{raw}^(d)} f_{eval}^(d)(w) ||^2
         L2_d = sum(
-            float(np.linalg.norm(bs_d.project(truncated[w])) ** 2)
-            for w in truncated
+            float(np.linalg.norm(bs_d.project(truncated_eval[w])) ** 2)
+            for w in truncated_eval
         )
         # Normalise by number of words
-        residuals[d] = L2_d / len(truncated)
+        residuals[d] = L2_d / len(truncated_eval)
 
     return residuals
 
@@ -65,16 +68,10 @@ def run_rq2(embeddings_raw: Dict[str, np.ndarray],
     Compare residual bias L2^(d) before and after DSD,
     for both baseline and MRL embeddings.
     """
-    bs_raw = BiasSubspace(k=k)
-    bs_raw.fit(embeddings_raw, gender_pairs)
-
-    bs_deb = BiasSubspace(k=k)
-    bs_deb.fit(embeddings_debiased, gender_pairs)
-
     residuals_raw = residual_bias_at_prefix(
-        embeddings_raw, bs_raw, prefix_dims, gender_pairs)
+        embeddings_raw, embeddings_raw, prefix_dims, gender_pairs, k)
     residuals_deb = residual_bias_at_prefix(
-        embeddings_debiased, bs_deb, prefix_dims, gender_pairs)
+        embeddings_raw, embeddings_debiased, prefix_dims, gender_pairs, k)
 
     rows = []
     for d in prefix_dims:

@@ -11,17 +11,17 @@ Adapted for Sentence Encoders using Cosine Similarity.
 """
 
 import json
+import torch
 import numpy as np
 from typing import List, Dict, Tuple
 from sentence_transformers import SentenceTransformer, util
 
-from src.bias.bias_subspace import BiasSubspace
-
-def evaluate_stereoset(model: SentenceTransformer,
-                       dataset_path: str = "data/stereoset_sample.json",        
+def evaluate_stereoset(model: SentenceTransformer, 
+                       dataset_path: str = "data/stereoset_sample.json",
                        prefix_dim: int = None,
-                       bias_subspace: BiasSubspace = None,
-                       lambda_2: float = 0.0) -> Dict[str, float]:
+                       tokenizer=None,
+                       transformer=None,
+                       use_last_hidden_state=None) -> Dict[str, float]:
     """
     Evaluates StereoSet metrics on a given model.
     If prefix_dim is provided, truncates embeddings to that dimension.
@@ -108,28 +108,34 @@ def evaluate_stereoset(model: SentenceTransformer,
         all_candidates.extend([d['stereo'], d['anti'], d['unrelated']])
         
     # 3. Batch Encode
+    def encode_last_hidden_state(sentences, tokenizer, transformer):
+        embeddings = []
+        for idx, sent in enumerate(sentences):
+            if idx % 100 == 0:
+                print(f"  Encoding {idx}/{len(sentences)}...", flush=True)
+            inputs = tokenizer(sent, return_tensors="pt", 
+                            truncation=True, max_length=128)
+            with torch.no_grad():
+                outputs = transformer(**inputs)
+            tokens = outputs.last_hidden_state[0][1:-1]  # remove CLS and SEP
+            vec = tokens.mean(dim=0).cpu().numpy()
+            embeddings.append(vec)
+        return np.array(embeddings)
+
     print("Encoding contexts...")
-    ctx_embs_all = model.encode(all_contexts, convert_to_numpy=True, batch_size=32, show_progress_bar=True)
-    
-    print("Encoding candidates...")
-    cand_embs_all = model.encode(all_candidates, convert_to_numpy=True, batch_size=32, show_progress_bar=True)
-    
+    if use_last_hidden_state and tokenizer and transformer:
+        ctx_embs_all = encode_last_hidden_state(all_contexts, tokenizer, transformer)
+        cand_embs_all = encode_last_hidden_state(all_candidates, tokenizer, transformer)
+    else:
+        ctx_embs_all = model.encode(all_contexts, convert_to_numpy=True, 
+                                    batch_size=32, show_progress_bar=True)
+        cand_embs_all = model.encode(all_candidates, convert_to_numpy=True, 
+                                    batch_size=32, show_progress_bar=True)
+
     if prefix_dim:
         ctx_embs_all = ctx_embs_all[:, :prefix_dim]
         cand_embs_all = cand_embs_all[:, :prefix_dim]
-
-    # 3.5. Apply soft debiasing if a bias subspace is provided
-    if bias_subspace is not None and lambda_2 > 0.0:
-        print("Applying soft debiasing to encoded sentences...")
-        # v_deb = (I - lambda_2 * P_B) @ v
-        # We process transposed embeddings since P_B operates natively on column vectors
-        P_B = bias_subspace.P_B
-        identity = np.eye(P_B.shape[0])
-        debias_matrix = identity - lambda_2 * P_B
         
-        ctx_embs_all = (debias_matrix @ ctx_embs_all.T).T
-        cand_embs_all = (debias_matrix @ cand_embs_all.T).T
-
     # 4. Compute Metrics
     # Iterate through valid examples
     for i in range(len(valid_data)):
