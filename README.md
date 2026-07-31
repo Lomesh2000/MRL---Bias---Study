@@ -16,6 +16,10 @@
 
 ---
 
+## Paper
+
+📄 **Research Manuscript (Unpublished)**  
+[Read the manuscript]([https://drive.google.com/file/...](https://drive.google.com/file/d/106scoTSJ8NXoWlflyDLyBTvI5vp2w9IY/view?usp=sharing))
 ## Folder Structure
 
 ```
